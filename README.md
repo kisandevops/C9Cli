@@ -7,9 +7,9 @@ C9Cli support following operations:
 - init ( To initialize config )
 - create-org
 - create-space
-- create-org-users
-- create-space-users
-- create-quotas
+- create-org-user
+- create-space-user
+- create-quota
 
 To Initialize configurations: 
 C9Cli.exe -i init -e api.sys-domain -u <cf-login-user> -p <cf-login-pwd> -o <org> -s <space> -a true (to enable ASGs)
