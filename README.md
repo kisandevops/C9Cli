@@ -1,7 +1,7 @@
 # C9Cli
 Cloud Foundry - cf management
 
-C9Cli helps maaintaing Cloud Foundry - Orgs/Spaces/Users/ASGs
+C9Cli helps maintaining  Cloud Foundry - Orgs/Spaces/Users/ASGs
 
 C9Cli support following operations:
 - init ( To initialize config )
