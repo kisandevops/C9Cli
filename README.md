@@ -11,6 +11,8 @@ C9Cli support following operations:
 - create-space-user
 - create-quota
 
+Tested on Linux/Ubuntu Env
+
 To Initialize configurations: 
 C9Cli.exe -i init -e api.sys-domain -u <cf-login-user> -p <cf-login-pwd> -o <org> -s <space> -a true (to enable ASGs)
 This will create config and sample ymls for further operation
