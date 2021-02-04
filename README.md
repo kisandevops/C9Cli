@@ -5,7 +5,7 @@ C9Cli helps maintaining  Cloud Foundry - Orgs/Spaces/Users/ASGs
 
 C9Cli support following operations: 
 
--i init -e <endpoint> -u <user> -o <org> -s <space> -a true {enable ASGs} 
+  -i init -e {<endpoint>} -u <user> -o <org> -s <space> -a true {enable ASGs} 
   
 -i create-org -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
 
