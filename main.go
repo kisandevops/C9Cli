@@ -4,13 +4,14 @@ import "C"
 import (
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
-	"gopkg.in/yaml.v2"
 )
 
 type Orglist struct {
@@ -59,12 +60,12 @@ type Quotalist struct {
 type ProtectedList struct {
 	Org   []string `yaml:"Org"`
 	Quota []string `yaml:"quota"`
+	DefaultRunningSecurityGroup string   `yaml:"DefaultRunningSecurityGroup"`
 }
 type InitClusterConfigVals struct {
 	ClusterDetails struct {
 		EndPoint  string `yaml:"EndPoint"`
 		User      string `yaml:"User"`
-		Pwd       string `yaml:"Pwd"`
 		Org       string `yaml:"Org"`
 		Space     string `yaml:"Space"`
 		EnableASG bool   `yaml:"EnableASG"`
@@ -73,20 +74,51 @@ type InitClusterConfigVals struct {
 
 func main()  {
 
-	var endpoint, user, pwd, org, space, asg, operation string
+	var endpoint, user, pwd, org, space, asg, operation, cpath, ostype string
+	var ospath io.Writer
 
 	flag.StringVar(&endpoint, "e", "api.sys-domain", "Use with init operation, Provide PCF Endpoint")
 	flag.StringVar(&user, "u", "user", "Use with init operation, Provide UserName")
-	flag.StringVar(&pwd, "p", "pwd", "Use with init operation, Provide Password")
+	flag.StringVar(&pwd, "p", "pwd", "Use with all operation, Provide Password")
 	flag.StringVar(&org, "o", "org", "Use with init operation, Provide Org")
 	flag.StringVar(&space, "s", "space", "Use with init operation, Provide Space")
 	flag.StringVar(&asg, "a", "true", "Use with init operation, Enable ASGs ?.")
 	flag.StringVar(&operation, "i", "init", "Provide Operation to be performed: init, create-{org,space,org-user,space-user,quota, ")
+	flag.StringVar(&cpath, "k", ".", "Provide path to configs, i.e, to C9Cli folder, use with all operations")
 	flag.Parse()
 
 	ClusterName := strings.ReplaceAll(endpoint, ".", "-")
 
 	fmt.Printf("Operation: %v\n", operation)
+
+	oscmd := exec.Command("cmd", "/C","echo","%systemdrive%%homepath%")
+	if _, err := oscmd.Output(); err != nil{
+		fmt.Println("Checking OS")
+		fmt.Println("command: ", oscmd)
+		fmt.Println("command: ", oscmd.Stdout)
+		fmt.Println("Err Code: ", err)
+		oscmd = exec.Command("sh", "-c", "echo","$HOME")
+		if _, err := oscmd.Output(); err != nil{
+			fmt.Println("Checking OS failed - Can't find Underlying OS")
+			fmt.Println("command: ", oscmd)
+			fmt.Println("command: ", oscmd.Stdout)
+			fmt.Println("Err Code: ", err)
+			panic(err)
+		} else {
+			fmt.Println("command: ", oscmd)
+			ospath = oscmd.Stdout
+			fmt.Println("PATH: ", ospath)
+			fmt.Println("Checking OS - Setting up for Mac/Linux/Ubuntu")
+			ostype = "non-windows"
+		}
+	} else {
+		fmt.Println("command: ", oscmd)
+		ospath = oscmd.Stdout
+		fmt.Println("PATH: ", ospath)
+		fmt.Println("Checking OS - Setting up for Windows")
+		ostype = "windows"
+		//panic(err)
+	}
 
 	if operation == "init" {
 
@@ -95,50 +127,170 @@ func main()  {
 		fmt.Printf("ClusterName: %v\n", ClusterName)
 		fmt.Printf("EndPoint: %v\n", endpoint)
 		fmt.Printf("User: %v\n", user)
-		fmt.Printf("Pwd: %v\n", pwd)
+		//fmt.Printf("Pwd: %v\n", pwd)
 		fmt.Printf("Org: %v\n", org)
 		fmt.Printf("Space: %v\n", space)
 		fmt.Printf("EnableASG: %v\n", asg)
-
-		Init(ClusterName, endpoint, user, pwd, org, space, asg)
+		fmt.Printf("Path: %v\n", cpath)
+		Init(ClusterName, endpoint, user, org, space, asg, cpath)
 
 	} else if operation == "create-org"{
 
 		fmt.Printf("ClusterName: %v\n", ClusterName)
-		SetupConnection (ClusterName)
-		CreateOrUpdateOrgs (ClusterName)
+		SetupConnection (ClusterName, pwd, cpath)
+		CreateOrUpdateOrgs (ClusterName, cpath)
 
 	} else if operation == "create-quota" {
 
 		fmt.Printf("ClusterName: %v\n", ClusterName)
-		SetupConnection (ClusterName)
-		CreateOrUpdateQuotas(ClusterName)
+		SetupConnection (ClusterName,  pwd, cpath)
+		CreateOrUpdateQuotas(ClusterName, cpath)
 
 	} else if operation == "create-org-user" {
 
 		fmt.Printf("ClusterName: %v\n", ClusterName)
-		SetupConnection(ClusterName)
-		CreateOrUpdateOrgUsers(ClusterName)
+		SetupConnection(ClusterName,  pwd, cpath)
+		CreateOrUpdateOrgUsers(ClusterName, cpath)
 	} else if operation == "create-space"{
 
 		fmt.Printf("ClusterName: %v\n", ClusterName)
-		SetupConnection (ClusterName)
-		CreateOrUpdateSpaces (ClusterName)
+		SetupConnection (ClusterName,  pwd, cpath)
+		CreateOrUpdateSpaces (ClusterName, cpath, ostype)
 
 	} else if operation == "create-space-user"{
 
 		fmt.Printf("ClusterName: %v\n", ClusterName)
-		SetupConnection (ClusterName)
-		CreateOrUpdateSpaceUsers (ClusterName)
+		SetupConnection (ClusterName,  pwd, cpath)
+		CreateOrUpdateSpaceUsers (ClusterName, cpath)
 
+	} else if operation == "create-protected-org-asg"{
+
+		fmt.Printf("ClusterName: %v\n", ClusterName)
+		SetupConnection (ClusterName,  pwd, cpath)
+		CreateOrUpdateProtOrgAsg (ClusterName, cpath, ostype)
+	} else if operation == "create-all" {
+		fmt.Printf("ClusterName: %v\n", ClusterName)
+		SetupConnection (ClusterName,  pwd, cpath)
+		CreateOrUpdateProtOrgAsg (ClusterName, cpath, ostype)
+		CreateOrUpdateQuotas(ClusterName, cpath)
+		CreateOrUpdateOrgs (ClusterName, cpath)
+		CreateOrUpdateOrgUsers(ClusterName, cpath)
+		CreateOrUpdateSpaces (ClusterName, cpath, ostype)
+		CreateOrUpdateSpaceUsers (ClusterName, cpath)
 	} else {
 		fmt.Println("Provide Valid input operation")
 	}
 }
-func SetupConnection(clustername string) error {
+
+func CreateOrUpdateProtOrgAsg(clustername string, cpath string, ostype string) {
+
+	var ProtectedOrgs ProtectedList
+	var ASGpath string
+	//ASGpath = cpath+"/C9Cli/"+clustername+"/ASGs/"
+	ProtectedOrgsYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
+	fileProtectedYml, err := ioutil.ReadFile(ProtectedOrgsYml)
 
 	var InitClusterConfigVals InitClusterConfigVals
-	ConfigFile := "~/.C9Cli"+"/mgmt/"+clustername+"/config.yml"
+	ConfigFile := cpath+"/C9Cli/"+clustername+"/config.yml"
+
+	fileConfigYml, err := ioutil.ReadFile(ConfigFile)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = yaml.Unmarshal([]byte(fileConfigYml), &InitClusterConfigVals)
+	if err != nil {
+		panic(err)
+	}
+
+	err = yaml.Unmarshal([]byte(fileProtectedYml), &ProtectedOrgs)
+	if err != nil {
+		panic(err)
+	}
+
+	if ostype == "windows" {
+		ASGpath = cpath+"\\C9Cli\\"+clustername+"\\ASGs\\"
+		//fmt.Println("Hi :",ASGPath)
+	} else {
+		ASGpath = cpath+"/C9Cli/"+clustername+"/ASGs/"
+	}
+
+	LenProtectedOrgs := len(ProtectedOrgs.Org)
+	var check *exec.Cmd
+	ASGfile := ASGpath+ProtectedOrgs.DefaultRunningSecurityGroup+".json"
+	if InitClusterConfigVals.ClusterDetails.EnableASG == true {
+		fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+
+		if ostype == "windows" {
+			check = exec.Command("powershell", "-command","Get-Content", ASGfile)
+		} else {
+			check = exec.Command("cat", ASGfile)
+		}
+
+		if _, err := check.Output(); err != nil {
+			fmt.Println("ASG for Protected Orgs: ", ProtectedOrgs.DefaultRunningSecurityGroup)
+			fmt.Println("command: ", check)
+			fmt.Println("Err: ", check.Stdout)
+			fmt.Println("Err Code: ", err)
+			fmt.Println("No Default ASG file provided in path for Protected Orgs")
+		} else {
+			fmt.Println("command: ", check)
+			fmt.Println(check.Stdout)
+			fmt.Println("ASG for Protected Orgs: ", ProtectedOrgs.DefaultRunningSecurityGroup)
+			checkdasg := exec.Command("cf", "security-group", ProtectedOrgs.DefaultRunningSecurityGroup)
+			if _, err := checkdasg.Output(); err != nil {
+				fmt.Println("command: ", checkdasg)
+				fmt.Println("Err: ", checkdasg.Stdout)
+				fmt.Println("Err Code: ", err)
+				fmt.Println("Default ASG doesn't exist, Creating default ASG")
+				createdasg := exec.Command("cf", "create-security-group", ProtectedOrgs.DefaultRunningSecurityGroup, ASGfile)
+				if _, err := createdasg.Output(); err != nil {
+					fmt.Println("command: ", createdasg)
+					fmt.Println("Err: ", createdasg.Stdout)
+					fmt.Println("Err Code: ", err)
+					fmt.Println("Creating default ASG failed")
+				} else {
+					fmt.Println("command: ", createdasg)
+					fmt.Println(createdasg.Stdout)
+				}
+			} else {
+				fmt.Println("Default ASG exist, Updating default ASG")
+				updatedefasg := exec.Command("cf", "update-security-group", ProtectedOrgs.DefaultRunningSecurityGroup, ASGfile)
+				if _, err := updatedefasg.Output(); err != nil {
+					fmt.Println("command: ", updatedefasg)
+					fmt.Println("Err: ", updatedefasg.Stdout)
+					fmt.Println("Err Code: ", err)
+					fmt.Println("Default ASG not updated")
+				} else {
+					fmt.Println("command: ", updatedefasg)
+					fmt.Println(updatedefasg.Stdout)
+				}
+			}
+		}
+
+		for p := 0; p < LenProtectedOrgs; p++ {
+			fmt.Println("Protected Org: ", ProtectedOrgs.Org[p])
+			fmt.Println("ASG for Protected Orgs: ", ProtectedOrgs.DefaultRunningSecurityGroup)
+			bindasg := exec.Command("cf", "bind-security-group", ProtectedOrgs.DefaultRunningSecurityGroup, ProtectedOrgs.Org[p], "--lifecycle", "running")
+			if _, err := bindasg.Output(); err != nil{
+				fmt.Println("command: ", bindasg)
+				fmt.Println("Err: ", bindasg.Stdout)
+				fmt.Println("Err Code: ", err)
+				fmt.Println("Failed to bind to protected Org")
+			} else {
+				fmt.Println("command: ", bindasg)
+				fmt.Println(bindasg.Stdout)
+			}
+		}
+	} else {
+		fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+		fmt.Println("ASGs not enabled")
+	}
+}
+func SetupConnection(clustername string, pwd string, cpath string) error {
+
+	var InitClusterConfigVals InitClusterConfigVals
+	ConfigFile := cpath+"/C9Cli/"+clustername+"/config.yml"
 
 	fileConfigYml, err := ioutil.ReadFile(ConfigFile)
 	if err != nil {
@@ -151,15 +303,16 @@ func SetupConnection(clustername string) error {
 	}
 	fmt.Printf("Endpoint: %v\n", InitClusterConfigVals.ClusterDetails.EndPoint)
 	fmt.Printf("User: %v\n", InitClusterConfigVals.ClusterDetails.User)
-	fmt.Printf("Pwd: %v\n", InitClusterConfigVals.ClusterDetails.Pwd)
+	fmt.Printf("Pwd: %v\n", pwd)
 	fmt.Printf("Org: %v\n", InitClusterConfigVals.ClusterDetails.Org)
 	fmt.Printf("Space: %v\n", InitClusterConfigVals.ClusterDetails.Space)
-    //fmt.Println(InitClusterConfigVals.ClusterDetails.EndPoint)
+	//fmt.Println(InitClusterConfigVals.ClusterDetails.EndPoint)
 
-	cmd := exec.Command("cf", "login", "-a", InitClusterConfigVals.ClusterDetails.EndPoint, "-u", InitClusterConfigVals.ClusterDetails.User, "-p", InitClusterConfigVals.ClusterDetails.Pwd, "-o", InitClusterConfigVals.ClusterDetails.Org, "-s", InitClusterConfigVals.ClusterDetails.Space)
+	cmd := exec.Command("cf", "login", "-a", InitClusterConfigVals.ClusterDetails.EndPoint, "-u", InitClusterConfigVals.ClusterDetails.User, "-p", pwd, "-o", InitClusterConfigVals.ClusterDetails.Org, "-s", InitClusterConfigVals.ClusterDetails.Space, "--skip-ssl-validation")
 	if _, err := cmd.Output(); err != nil{
 		fmt.Println("Connection failed")
 		fmt.Println("command: ", cmd)
+		fmt.Println("Err: ", cmd.Stdout)
 		fmt.Println("Err Code: ", err)
 		panic(err)
 	} else {
@@ -169,12 +322,12 @@ func SetupConnection(clustername string) error {
 	}
 	return err
 }
-func CreateOrUpdateOrgs(clustername string) error {
+func CreateOrUpdateOrgs(clustername string, cpath string) error {
 
 	var Orgs Orglist
 	var ProtectedOrgs ProtectedList
 
-	OrgsYml := "~/C9Cli/mgmt/"+clustername+"/Org.yml"
+	OrgsYml := cpath+"/C9Cli/"+clustername+"/Org.yml"
 	fileOrgYml, err := ioutil.ReadFile(OrgsYml)
 
 	if err != nil {
@@ -187,7 +340,7 @@ func CreateOrUpdateOrgs(clustername string) error {
 	}
 
 
-	ProtectedOrgsYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
+	ProtectedOrgsYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 	fileProtectedYml, err := ioutil.ReadFile(ProtectedOrgsYml)
 
 	if err != nil {
@@ -215,7 +368,7 @@ func CreateOrUpdateOrgs(clustername string) error {
 			}
 		}
 		totalcount = totalcount + count
-		fmt.Println(totalcount)
+	//	fmt.Println(totalcount)
 
 		if totalcount == 0 {
 			fmt.Println("This is not Protected Org")
@@ -228,6 +381,7 @@ func CreateOrUpdateOrgs(clustername string) error {
 				SetQuota := exec.Command("cf", "set-quota", Orgs.Org[i].Name, Orgs.Org[i].Quota)
 				if _, err := SetQuota.Output(); err != nil{
 					fmt.Println("command: ", SetQuota)
+					fmt.Println("Err: ", SetQuota.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", SetQuota)
@@ -235,12 +389,14 @@ func CreateOrUpdateOrgs(clustername string) error {
 				}
 			} else {
 				fmt.Println("command: ", guid)
+				fmt.Println("Err: ", guid.Stdout)
 				fmt.Println("Err Code: ", err)
 				fmt.Println("Pulling Guid Id: ", guid.Stdout)
 				fmt.Println("Org doesn't exists, Creating Org")
 				createorg := exec.Command("cf", "create-org", Orgs.Org[i].Name)
 				if _, err := createorg.Output(); err != nil{
 					fmt.Println("command: ", createorg)
+					fmt.Println("Err: ", createorg.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", createorg)
@@ -249,6 +405,7 @@ func CreateOrUpdateOrgs(clustername string) error {
 				attachquota := exec.Command("cf", "set-quota", Orgs.Org[i].Name, Orgs.Org[i].Quota)
 				if _, err := attachquota.Output(); err != nil{
 					fmt.Println("command: ", attachquota)
+					fmt.Println("Err: ", attachquota.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", attachquota)
@@ -261,13 +418,36 @@ func CreateOrUpdateOrgs(clustername string) error {
 	}
 	return err
 }
-func CreateOrUpdateSpaces(clustername string) error {
+func CreateOrUpdateSpaces(clustername string, cpath string, ostype string) error {
 
 	var Orgs Orglist
 	var ProtectedOrgs ProtectedList
 
+	var InitClusterConfigVals InitClusterConfigVals
+	ConfigFile := cpath+"/C9Cli/"+clustername+"/config.yml"
 
-	OrgsYml := "~/C9Cli/mgmt/"+clustername+"/Org.yml"
+	fileConfigYml, err := ioutil.ReadFile(ConfigFile)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = yaml.Unmarshal([]byte(fileConfigYml), &InitClusterConfigVals)
+	if err != nil {
+		panic(err)
+	}
+	var ASGPath, OrgsYml string
+
+	//fmt.Printf("Endpoint: %v\n", InitClusterConfigVals.ClusterDetails.EndPoint)
+
+	if ostype == "windows" {
+		ASGPath = cpath+"\\C9Cli\\"+clustername+"\\ASGs\\"
+		OrgsYml = cpath+"\\C9Cli\\"+clustername+"\\Org.yml"
+		fmt.Println("Hi :",ASGPath)
+	} else {
+		ASGPath = cpath+"/C9Cli/"+clustername+"/ASGs/"
+		OrgsYml = cpath+"/C9Cli/"+clustername+"/Org.yml"
+	}
+
 	fileOrgYml, err := ioutil.ReadFile(OrgsYml)
 
 	if err != nil {
@@ -279,9 +459,8 @@ func CreateOrUpdateSpaces(clustername string) error {
 		panic(err)
 	}
 
-	ProtectedOrgsYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
+	ProtectedOrgsYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 	fileProtectedYml, err := ioutil.ReadFile(ProtectedOrgsYml)
-
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -305,10 +484,10 @@ func CreateOrUpdateSpaces(clustername string) error {
 				count = 1
 			} else {
 				count = 0
-				}
 			}
+		}
 		totalcount = totalcount + count
-		fmt.Println(totalcount)
+		//fmt.Println(totalcount)
 
 		if totalcount == 0 {
 			fmt.Println("This is not Protected Org")
@@ -326,6 +505,7 @@ func CreateOrUpdateSpaces(clustername string) error {
 					fmt.Println("Targeting: ", TargetOrg.Stdout)
 				} else {
 					fmt.Println("command: ", TargetOrg)
+					fmt.Println("Err: ", TargetOrg.Stdout)
 					fmt.Println("Err Code: ", err)
 				}
 
@@ -336,8 +516,17 @@ func CreateOrUpdateSpaces(clustername string) error {
 					guid = exec.Command("cf", "space", Orgs.Org[i].Spaces[j].Name, "--guid")
 
 					if _, err := guid.Output(); err == nil{
+
 						fmt.Println("command: ", guid)
 						fmt.Println("Space exists: ", guid.Stdout)
+						fmt.Println("Creating or updating ASGs")
+						if InitClusterConfigVals.ClusterDetails.EnableASG == true {
+							fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+							CreateOrUpdateASGs(Orgs.Org[i].Name, Orgs.Org[i].Spaces[j].Name, ASGPath, ostype)
+						} else {
+							fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+							fmt.Println("ASGs not enabled")
+						}
 					} else {
 						fmt.Println("command: ", guid)
 						fmt.Println("Pulling Space Guid ID: ", guid.Stdout )
@@ -347,15 +536,24 @@ func CreateOrUpdateSpaces(clustername string) error {
 
 						if _, err := CreateSpace.Output(); err != nil {
 							fmt.Println("command: ", CreateSpace)
+							fmt.Println("Err: ", CreateSpace.Stdout)
 							fmt.Println("Err Code: ", err)
 						} else {
 							fmt.Println("command: ", CreateSpace)
 							fmt.Println(CreateSpace.Stdout)
+							if InitClusterConfigVals.ClusterDetails.EnableASG == true {
+								fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+								CreateOrUpdateASGs(Orgs.Org[i].Name, Orgs.Org[i].Spaces[j].Name, ASGPath, ostype)
+							} else {
+								fmt.Println("Enable ASGs: ", InitClusterConfigVals.ClusterDetails.EnableASG)
+								fmt.Println("ASGs not enabled")
+							}
 						}
 					}
 				}
 			} else {
 				fmt.Println("command: ", guid )
+				fmt.Println("Err: ", guid.Stdout)
 				fmt.Println("Err Code: ", err)
 				fmt.Println("Org doesn't exists, Please create Org")
 			}
@@ -365,13 +563,13 @@ func CreateOrUpdateSpaces(clustername string) error {
 	}
 	return err
 }
-func CreateOrUpdateQuotas(clustername string) error {
+func CreateOrUpdateQuotas(clustername string, cpath string) error {
 
 	var Quotas Quotalist
 	var ProtectedQuota ProtectedList
 
 
-	QuotaYml := "~/C9Cli/mgmt/"+clustername+"/Quota.yml"
+	QuotaYml := cpath+"/C9Cli/"+clustername+"/Quota.yml"
 	fileQuotaYml, err := ioutil.ReadFile(QuotaYml)
 
 	if err != nil {
@@ -383,7 +581,7 @@ func CreateOrUpdateQuotas(clustername string) error {
 		panic(err)
 	}
 
-	ProtectedQuotasYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
+	ProtectedQuotasYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 	fileProtectedQYml, err := ioutil.ReadFile(ProtectedQuotasYml)
 
 	if err != nil {
@@ -412,7 +610,7 @@ func CreateOrUpdateQuotas(clustername string) error {
 			}
 		}
 		totalcount = totalcount + count
-		fmt.Println(totalcount)
+		//fmt.Println(totalcount)
 
 		if totalcount == 0 {
 
@@ -421,12 +619,14 @@ func CreateOrUpdateQuotas(clustername string) error {
 
 			if _, err := Quotadetails.Output(); err != nil{
 				fmt.Println("command: ", Quotadetails)
+				fmt.Println("Err: ", Quotadetails.Stdout)
 				fmt.Println("Err Code: ", err)
 				//fmt.Println("Quota Doesn't exits: ", Quotadetails.Stdout)
 				fmt.Println("Creating Quota")
 				cmd := exec.Command("cf", "create-quota", Quotas.Quota[i].Name, "-m", Quotas.Quota[i].MemoryLimit, "-i", "-1", "-r", "-1", "-s", "-1", "-a", "-1", "--allow-paid-service-plans")
 				if _, err := cmd.Output(); err != nil{
 					fmt.Println("command: ", cmd)
+					fmt.Println("Err: ", cmd.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", cmd)
@@ -435,6 +635,7 @@ func CreateOrUpdateQuotas(clustername string) error {
 				QuotaGet := exec.Command("cf", "quota", Quotas.Quota[i].Name)
 				if _, err := QuotaGet.Output(); err != nil{
 					fmt.Println("command: ", QuotaGet)
+					fmt.Println("Err: ", QuotaGet.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", QuotaGet)
@@ -447,6 +648,7 @@ func CreateOrUpdateQuotas(clustername string) error {
 				cmd := exec.Command("cf", "update-quota", Quotas.Quota[i].Name, "-m", Quotas.Quota[i].MemoryLimit, "-i", "-1", "-r", "-1", "-s", "-1", "-a", "-1", "--allow-paid-service-plans")
 				if _, err := cmd.Output(); err != nil{
 					fmt.Println("command: ", cmd)
+					fmt.Println("Err: ", cmd.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", cmd)
@@ -455,6 +657,7 @@ func CreateOrUpdateQuotas(clustername string) error {
 				QuotaGet := exec.Command("cf", "quota", Quotas.Quota[i].Name)
 				if _, err := QuotaGet.Output(); err != nil{
 					fmt.Println("command: ", QuotaGet)
+					fmt.Println("Err: ", QuotaGet.Stdout)
 					fmt.Println("Err Code: ", err)
 				} else {
 					fmt.Println("command: ", QuotaGet)
@@ -467,12 +670,12 @@ func CreateOrUpdateQuotas(clustername string) error {
 	}
 	return err
 }
-func CreateOrUpdateOrgUsers(clustername string) error {
+func CreateOrUpdateOrgUsers(clustername string, cpath string) error {
 
 	var Orgs Orglist
 	var ProtectedOrgs ProtectedList
 
-	OrgsYml := "~/C9Cli/mgmt/"+clustername+"/Org.yml"
+	OrgsYml := cpath+"/C9Cli/"+clustername+"/Org.yml"
 	fileOrgYml, err := ioutil.ReadFile(OrgsYml)
 
 	if err != nil {
@@ -484,7 +687,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 		panic(err)
 	}
 
-	ProtectedOrgsYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
+	ProtectedOrgsYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 	fileProtectedYml, err := ioutil.ReadFile(ProtectedOrgsYml)
 
 	if err != nil {
@@ -513,7 +716,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 			}
 		}
 		totalcount = totalcount + count
-		fmt.Println(totalcount)
+		//fmt.Println(totalcount)
 
 		if totalcount == 0 {
 
@@ -537,6 +740,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 
 					if _, err := cmd.Output(); err != nil{
 						fmt.Println("command: ", cmd)
+						fmt.Println("Err: ", cmd.Stdout)
 						fmt.Println("Err Code: ", err)
 					} else {
 						fmt.Println("command: ", cmd)
@@ -555,6 +759,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 					cmd := exec.Command("cf", "set-org-role", Orgs.Org[i].OrgUsers.UAA[k].Name, Orgs.Org[i].Name, Orgs.Org[i].OrgUsers.UAA[k].Role)
 					if _, err := cmd.Output(); err != nil{
 						fmt.Println("command: ", cmd)
+						fmt.Println("Err: ", cmd.Stdout)
 						fmt.Println("Err Code: ", err)
 					} else {
 						fmt.Println("command: ", cmd)
@@ -571,6 +776,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 					cmd := exec.Command("cf", "set-org-role", Orgs.Org[i].OrgUsers.SSO[l].Name, Orgs.Org[i].Name, Orgs.Org[i].OrgUsers.SSO[l].Role)
 					if _, err := cmd.Output(); err != nil{
 						fmt.Println("command: ", cmd)
+						fmt.Println("Err: ", cmd.Stdout)
 						fmt.Println("Err Code: ", err)
 					} else {
 						fmt.Println("command: ", cmd)
@@ -579,6 +785,7 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 				}
 			} else {
 				fmt.Println("command: ", guid)
+				fmt.Println("Err: ", guid.Stdout)
 				fmt.Println("Err Code: ", err)
 				fmt.Println("Pulling Org Guid Id: ", guid.Stdout)
 				fmt.Println("Please Create Org")
@@ -589,12 +796,12 @@ func CreateOrUpdateOrgUsers(clustername string) error {
 	}
 	return err
 }
-func CreateOrUpdateSpaceUsers(clustername string) error {
+func CreateOrUpdateSpaceUsers(clustername string, cpath string) error {
 
 	var Orgs Orglist
 	var ProtectedOrgs ProtectedList
 
-	OrgsYml := "~/C9Cli/mgmt/"+clustername+"/Org.yml"
+	OrgsYml := cpath+"/C9Cli/"+clustername+"/Org.yml"
 	fileOrgYml, err := ioutil.ReadFile(OrgsYml)
 
 	if err != nil {
@@ -606,7 +813,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 		panic(err)
 	}
 
-	ProtectedOrgsYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
+	ProtectedOrgsYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 	fileProtectedYml, err := ioutil.ReadFile(ProtectedOrgsYml)
 
 	if err != nil {
@@ -634,7 +841,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 			}
 		}
 		totalcount = totalcount + count
-		fmt.Println(totalcount)
+		//fmt.Println(totalcount)
 
 		if totalcount == 0 {
 			guid := exec.Command("cf", "org", Orgs.Org[i].Name, "--guid")
@@ -649,6 +856,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 					fmt.Println("Targeted Org: ", targetOrg.Stdout)
 				} else {
 					fmt.Println("command: ", targetOrg)
+					fmt.Println("Err: ", targetOrg.Stdout)
 					fmt.Println("Err Code: ", targetOrg.Stderr)
 				}
 				SpaceLen := len(Orgs.Org[i].Spaces)
@@ -669,6 +877,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 							cmd := exec.Command("cf", "set-space-role", Orgs.Org[i].Spaces[j].SpaceUsers.LDAP[k].Name, Orgs.Org[i].Name, Orgs.Org[i].Spaces[j].Name, Orgs.Org[i].Spaces[j].SpaceUsers.LDAP[k].Role)
 							if _, err := cmd.Output(); err != nil{
 								fmt.Println("command: ", cmd)
+								fmt.Println("Err: ", cmd.Stdout)
 								fmt.Println("Err Code: ", err)
 							} else {
 								fmt.Println("command: ", cmd)
@@ -684,6 +893,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 							cmd := exec.Command("cf", "set-space-role", Orgs.Org[i].Spaces[j].SpaceUsers.UAA[l].Name, Orgs.Org[i].Name, Orgs.Org[i].Spaces[j].Name, Orgs.Org[i].Spaces[j].SpaceUsers.UAA[l].Role)
 							if _, err := cmd.Output(); err != nil{
 								fmt.Println("command: ", cmd)
+								fmt.Println("Err: ", cmd.Stdout)
 								fmt.Println("Err Code: ", err)
 							} else {
 								fmt.Println("command: ", cmd)
@@ -698,6 +908,7 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 							cmd := exec.Command("cf", "set-space-role", Orgs.Org[i].Spaces[j].SpaceUsers.SSO[m].Name, Orgs.Org[i].Name, Orgs.Org[i].Spaces[j].Name, Orgs.Org[i].Spaces[j].SpaceUsers.SSO[m].Role)
 							if _, err := cmd.Output(); err != nil{
 								fmt.Println("command: ", cmd)
+								fmt.Println("Err: ", cmd.Stdout)
 								fmt.Println("Err Code: ", err)
 							} else {
 								fmt.Println("command: ", cmd)
@@ -707,12 +918,14 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 
 					} else {
 						fmt.Println("command: ",guid)
+						fmt.Println("Err: ", guid.Stdout)
 						fmt.Println("Err Code: ", err)
 						fmt.Println("Space doesn't exists, Please create Space")
 					}
 				}
 			} else {
 				fmt.Println("command: ", guid)
+				fmt.Println("Err: ", guid.Stdout)
 				fmt.Println("Err Code: ", err)
 				fmt.Println("Org doesn't exists, Please create Org")
 			}
@@ -720,50 +933,120 @@ func CreateOrUpdateSpaceUsers(clustername string) error {
 	}
 	return err
 }
-func Init(clustername string, endpoint string, user string, pwd string, org string, space string, asg string) (err error) {
+func CreateOrUpdateASGs(Org string, Space string, asgpath string, ostype string) {
+
+	ASGPath := asgpath
+	ASGName := Org+"_"+Space+".json"
+	path := ASGPath+ASGName
+
+	//check := exec.Command("powershell", "-command","Get-Content", path)
+
+	var check *exec.Cmd
+
+	if ostype == "windows" {
+		check = exec.Command("powershell", "-command","Get-Content", path)
+		//check = exec.Command("type", path)
+	} else {
+		check = exec.Command("cat", path)
+	}
+
+	//check := exec.Command("cat", path)
+
+	if _, err := check.Output(); err != nil {
+		fmt.Println("command: ", check)
+		fmt.Println("Err: ", check.Stdout)
+		fmt.Println("Err Code: ", err)
+		fmt.Println("No ASG defined for Org and Space combination")
+	} else
+	{
+		fmt.Println("command: ", check)
+		fmt.Println(check.Stdout)
+		fmt.Println("Binding ASGs")
+
+		checkcreate := exec.Command("cf", "security-group", ASGName)
+		if _, err := checkcreate.Output(); err != nil {
+			fmt.Println("command: ", checkcreate)
+			fmt.Println("Err: ", checkcreate.Stdout)
+			fmt.Println("Err Code: ", err)
+			fmt.Println("ASG doesn't exist, Creating ASG")
+
+			createasg := exec.Command("cf", "create-security-group", ASGName, path)
+			if _, err := createasg.Output(); err != nil {
+				fmt.Println("command: ", createasg)
+				fmt.Println("Err: ", createasg.Stdout)
+				fmt.Println("Err Code: ", err)
+				fmt.Println("ASG creation failed")
+			} else {
+				fmt.Println("command: ", createasg)
+				fmt.Println(createasg.Stdout)
+			}
+		} else {
+			fmt.Println("command: ", checkcreate)
+			fmt.Println(checkcreate.Stdout)
+			fmt.Println("ASG exist, Updating ASG")
+			updateasg := exec.Command("cf", "update-security-group", ASGName, path)
+			if _, err := updateasg.Output(); err != nil {
+				fmt.Println("command: ", updateasg)
+				fmt.Println("Err: ", updateasg.Stdout)
+				fmt.Println("Err Code: ", err)
+				fmt.Println("ASG update failed")
+			} else {
+				fmt.Println("command: ", updateasg)
+				fmt.Println(updateasg.Stdout)
+			}
+		}
+		fmt.Println("Creating or Updating ASG finished, binding ASG")
+		bindasg := exec.Command("cf", "bind-security-group", ASGName, Org, Space, "--lifecycle", "running")
+		if _, err := bindasg.Output(); err != nil {
+			fmt.Println("command: ", bindasg)
+			fmt.Println("Err: ", bindasg.Stdout)
+			fmt.Println("Err Code: ", err)
+			fmt.Println("ASG binding failed")
+		} else {
+			fmt.Println("command: ", bindasg)
+			fmt.Println(bindasg.Stdout)
+		}
+	}
+	return
+}
+func Init(clustername string, endpoint string, user string, org string, space string, asg string, cpath string) (err error) {
 
 	type ClusterDetails struct {
 		EndPoint         string `yaml:"EndPoint"`
 		User         string `yaml:"User"`
-		Pwd        string `yaml:"Pwd"`
 		Org            string `yaml:"Org"`
 		Space string  `yaml:"Space"`
 		EnableASG     string `yaml:"EnableASG"`
 	}
 
-	// Variables - host, namespace
-	ConfigPath := "~/.C9Cli"+"/mgmt/"+clustername
-	mgmtpath := "~/C9Cli/mgmt/"+clustername
-	ASGPath := "~/C9Cli/mgmt/"+clustername+"/ASGs"
-	//ConfigFile := "~/C9Cli/mgmt/"+clustername+"/config.yml"
-	OrgsYml := "~/C9Cli/mgmt/"+clustername+"/Org.yml"
-	QuotasYml := "~/C9Cli/mgmt/"+clustername+"/Quota.yml"
-	ProtectedResourcesYml := "~/C9Cli/mgmt/"+clustername+"/ProtectedResources.yml"
 
-	//println(data)
+	mgmtpath := cpath+"/C9Cli/"+clustername
+	ASGPath := cpath+"/C9Cli/"+clustername+"/ASGs/"
+	OrgsYml := cpath+"/C9Cli/"+clustername+"/Org.yml"
+	QuotasYml := cpath+"/C9Cli/"+clustername+"/Quota.yml"
+	ProtectedResourcesYml := cpath+"/C9Cli/"+clustername+"/ProtectedResources.yml"
 
-	_, err = os.Stat(ConfigPath)
 
+	_, err = os.Stat(mgmtpath)
 	if os.IsNotExist(err) {
-		errDir := os.MkdirAll(ConfigPath, 0755)
-		if errDir != nil {
-			log.Fatal(err)
-		}
+
+		fmt.Println("Creating C9Cli/<cluster> folder")
+		errDir := os.MkdirAll(mgmtpath, 0755)
+
 
 		var data = `---
 ClusterDetails:
   EndPoint: {{ .EndPoint }}
   User: {{ .User }}
-  Pwd: {{ .Pwd }}
   Org: {{ .Org }}
   Space: {{ .Space }}
   EnableASG: {{ .EnableASG }}`
 
 		// Create the file:
-		err = ioutil.WriteFile(ConfigPath+"/config.tmpl", []byte(data), 0644)
+		err = ioutil.WriteFile(mgmtpath+"/config.tmpl", []byte(data), 0644)
 		check(err)
 
-		values := ClusterDetails{EndPoint: endpoint, User: user, Pwd: pwd, Org: org, Space: space, EnableASG: asg}
+		values := ClusterDetails{EndPoint: endpoint, User: user, Org: org, Space: space, EnableASG: asg}
 
 		var templates *template.Template
 		var allFiles []string
@@ -773,7 +1056,7 @@ ClusterDetails:
 		}
 
 		filename := "config.tmpl"
-		fullPath := ConfigPath + "/config.tmpl"
+		fullPath := mgmtpath + "/config.tmpl"
 		if strings.HasSuffix(filename, ".tmpl") {
 			allFiles = append(allFiles, fullPath)
 		}
@@ -785,27 +1068,20 @@ ClusterDetails:
 		}
 
 		s1 := templates.Lookup("config.tmpl")
-		f, err := os.Create(ConfigPath + "/config.yml")
+		f, err := os.Create(mgmtpath + "/config.yml")
 		if err != nil {
 			panic(err)
 		}
 
-		fmt.Println("Creating .C9Cli folder and config files")
+		fmt.Println("Creating C9Cli folder and config files")
 
 		err = s1.Execute(f, values)
 		defer f.Close() // don't forget to close the file when finished.
 		if err != nil {
 			panic(err)
 		}
-	} else {
-		fmt.Println("~/.C9Cli/mgmt/<cluster> exists, please manually edit file to make changes or provide new cluster name")
-	}
 
-	_, err = os.Stat(mgmtpath)
-	if os.IsNotExist(err) {
 
-		fmt.Println("Creating C9Cli/mgmt/<cluster> folder")
-		errDir := os.MkdirAll(mgmtpath, 0755)
 
 		var OrgTmp = `---
 Org:
@@ -898,9 +1174,10 @@ quota:
     - healthwatch
     - dynatrace
   quota:
-    - default`
+    - default
+  DefaultRunningSecurityGroup: default_security_group`
 
-		fmt.Println("Creating C9Cli/mgmt/<cluster>/ sample yaml files")
+		fmt.Println("Creating C9Cli/<cluster>/ sample yaml files")
 		err = ioutil.WriteFile(OrgsYml, []byte(OrgTmp), 0644)
 		check(err)
 		err = ioutil.WriteFile(QuotasYml, []byte(QuotasTmp), 0644)
@@ -912,7 +1189,7 @@ quota:
 			log.Fatal(err)
 		}
 	} else {
-		fmt.Println("C9Cli/mgmt/<cluster> exists, please manually edit file to make changes or provide new cluster name")
+		fmt.Println("C9Cli/<cluster> exists, please manually edit file to make changes or provide new cluster name")
 	}
 
 	_, err = os.Stat(ASGPath)
@@ -920,9 +1197,9 @@ quota:
 		errDir := os.MkdirAll(ASGPath, 0755)
 		if errDir != nil {
 			log.Fatal(err)
-			fmt.Println("C9Cli/mgmt/<cluster>/ASGs exist, please manually edit file to make changes or provide new cluster name")
+			fmt.Println("C9Cli/<cluster>/ASGs exist, please manually edit file to make changes or provide new cluster name")
 		} else {
-			fmt.Println("Creating C9Cli/mgmt/<cluster>/ASGs")
+			fmt.Println("Creating C9Cli/<cluster>/ASGs")
 		}
 	}
 
