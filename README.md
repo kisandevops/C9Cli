@@ -5,19 +5,19 @@ C9Cli helps maintaining  Cloud Foundry - Orgs/Spaces/Users/ASGs
 
 C9Cli support following operations: 
 
-  -i init -e {endpoint} -u <user> -o <org> -s <space> -a true {enable ASGs} 
+-i init -e {endpoint} -u {user} -o {org} -s {space} -a true {enable ASGs} 
   
--i create-org -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-org -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
--i create-space -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-space -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
--i create-org-user -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-org-user -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
--i create-space-user -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-space-user -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
--i create-quota -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-quota -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
--i create-protected-org-asg -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-protected-org-asg -e {endpoint} -p {pwd} -k {path to C9Cli Folder}
 
 
 Build: go build main.go
