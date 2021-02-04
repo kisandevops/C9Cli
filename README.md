@@ -4,30 +4,32 @@ Cloud Foundry - cf management
 C9Cli helps maintaining  Cloud Foundry - Orgs/Spaces/Users/ASGs
 
 C9Cli support following operations:
-- init ( To initialize config )
-- create-org
-- create-space
-- create-org-user
-- create-space-user
-- create-quota
+-i init -e <endpoint> -u <user> -o <org> -s <space> -a true {enable ASGs}
+-i create-org -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-space -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-org-user -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-space-user -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-quota -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
+-i create-protected-org-asg -e <endpoint> -p <pwd> -k <path to C9Cli Folder>
 
 
-Tested on Linux/Ubuntu Env
+Build: go build main.go
 
 To Initialize configurations: 
-C9Cli -i init -e api.sys-domain -u cf-login-user -p cf-login-pwd -o org -s space -a true (to enable ASGs)
-This will create config and sample ymls for further operation
+C9Cli -i init will create config and sample ymls for further operation
   
   cf login config:
-  ~/.C9Cli/mgmt/endpoint/config.yml - holds all cf login details created during init operation
+  ~/C9Cli/endpoint/config.yml - holds all cf login details created during init operation
   
   Yamls for Org/Space management:
-  ~/C9Cli/mgmt/endpoint/Org.yml
-  ~/C9Cli/mgmt/endpoint/Quota.yml
-  ~/C9Cli/mgmt/endpoint/ProtectedResources.yml
+  ~/C9Cli/endpoint/Org.yml
+  ~/C9Cli/endpoint/Quota.yml
+  ~/C9Cli/endpoint/ProtectedResources.yml
   
 Operators/Users are required to fill the the above Yaml files before executing create operations. The Orgs and Quotas listed ProtectedResources.yml are not touched during the  cli execution even if they are added to Org/Quota.yml
     
 Pending Items:
-- Delete Orgs/Spaces/Users
-- Assiging ASGs
+- Delete Orgs/Spaces/Users/ASGs
+
+ASGs:
+Inital ASG setup such as creating platform wide default ASG needed to performed by operator. But cli can create/update running ASG to protected Orgs during create-protected-org-asg operation. All the ASGs has to be created in ~/C9Cli/mgmt/endpoint/AGSs/ folder with name <org>_<space>.json. At the Space level, Whenever create-space operation is triggered all space with updated with new created or existing ASGs. This command will also update changes made to JSON files
